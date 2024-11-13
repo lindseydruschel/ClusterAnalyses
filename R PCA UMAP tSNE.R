@@ -1,14 +1,12 @@
-# Load necessary libraries
-library(tidyverse)
 library(dplyr)
 library(ggplot2)
-library(umap)
+library(ggrepel)
+library(ggridges)
 library(Rtsne)
+library(umap)
 
-#### Prep Data ####
-
-# Read in the data
-data <- read.csv("D2vsD4_all genes 17000 for PCA.csv")
+# Set the correct file path
+data <- read.csv("C:/Users/druschel/Downloads/D2vsD4_all genes 17000 for PCA.csv")
 
 # Select only the expression columns for PCA (D2 and D4 samples)
 expression_data <- data %>%
@@ -17,6 +15,10 @@ expression_data <- data %>%
 # Transpose the data so that samples are rows and genes are columns
 transposed_data <- as.data.frame(t(expression_data))
 
+# Extract sample names and conditions from row names
+sample_names <- rownames(transposed_data)
+conditions <- ifelse(grepl("^D2_", sample_names), "D2", "D4")
+
 # Log-transform the data (optional for RNA-seq data)
 log_data <- log2(transposed_data + 1)
 
@@ -24,157 +26,134 @@ log_data <- log2(transposed_data + 1)
 # Perform PCA
 pca_result <- prcomp(log_data, center = TRUE, scale. = TRUE)
 
-# Check variance explained by each principal component
+# Calculate variance explained
 pca_var <- pca_result$sdev^2
 pca_var_explained <- pca_var / sum(pca_var) * 100
-print(pca_var_explained)  # Optional: view variance explained
 
-# Prepare data for plotting
+# Prepare data for PCA plotting
 pca_data <- as.data.frame(pca_result$x)
-pca_data$Condition <- c(rep("D2", 4), rep("D4", 5))  # Labeling 4 samples for D2 and 5 for D4
+pca_data$Condition <- conditions
+pca_data$Sample <- sample_names
 
-# PCA for all samples (already in the existing script)
-ggplot(pca_data, aes(x = PC1, y = PC2, color = Condition)) +
+# Plot PCA with sample names
+ggplot(pca_data, aes(x = PC1, y = PC2, color = Condition, label = Sample)) +
   geom_point(size = 3) +
+  geom_text_repel(size = 3) +
   labs(title = "PCA of All Samples (D2 and D4)",
        x = paste0("PC1: ", round(pca_var_explained[1], 2), "% variance"),
        y = paste0("PC2: ", round(pca_var_explained[2], 2), "% variance")) +
   theme_minimal()
 
-#### PCA for each group ####
-
-# Set a small variance threshold to filter out low-variance columns
-variance_threshold <- 1e-6
-
-# Subset the data for D2 samples
+#### PCA - D2 Only ####
 d2_data <- expression_data %>% dplyr::select(starts_with("D2_"))
-# Filter out columns with near-zero variance in D2 data
-d2_log_data <- d2_log_data[, apply(d2_log_data, 2, var) > variance_threshold]
-
-# Perform PCA on D2 samples with filtered data
+d2_log_data <- log2(t(d2_data) + 1)
 d2_pca_result <- prcomp(d2_log_data, center = TRUE, scale. = TRUE)
-
-# Prepare data for D2 PCA plot
-d2_pca_data <- as.data.frame(d2_pca_result$x)
 d2_var_explained <- d2_pca_result$sdev^2 / sum(d2_pca_result$sdev^2) * 100
+d2_pca_data <- as.data.frame(d2_pca_result$x)
+d2_pca_data$Sample <- colnames(d2_data)
 
-# Plot PCA for D2 samples only
-ggplot(d2_pca_data, aes(x = PC1, y = PC2)) +
+# Plot D2 PCA with sample names
+ggplot(d2_pca_data, aes(x = PC1, y = PC2, label = Sample)) +
   geom_point(size = 3, color = "blue") +
+  geom_text_repel(size = 3) +
   labs(title = "PCA of D2 Samples Only",
        x = paste0("PC1: ", round(d2_var_explained[1], 2), "% variance"),
        y = paste0("PC2: ", round(d2_var_explained[2], 2), "% variance")) +
   theme_minimal()
 
-# Subset the data for D4 samples
+#### PCA - D4 Only ####
 d4_data <- expression_data %>% dplyr::select(starts_with("D4_"))
-# Filter out columns with near-zero variance in D4 data
-d4_log_data <- d4_log_data[, apply(d4_log_data, 2, var) > variance_threshold]
-
-# Perform PCA on D4 samples with filtered data
+d4_log_data <- log2(t(d4_data) + 1)
 d4_pca_result <- prcomp(d4_log_data, center = TRUE, scale. = TRUE)
-
-# Prepare data for D4 PCA plot
-d4_pca_data <- as.data.frame(d4_pca_result$x)
 d4_var_explained <- d4_pca_result$sdev^2 / sum(d4_pca_result$sdev^2) * 100
+d4_pca_data <- as.data.frame(d4_pca_result$x)
+d4_pca_data$Sample <- colnames(d4_data)
 
-# Plot PCA for D4 samples only
-ggplot(d4_pca_data, aes(x = PC1, y = PC2)) +
+# Plot D4 PCA with sample names
+ggplot(d4_pca_data, aes(x = PC1, y = PC2, label = Sample)) +
   geom_point(size = 3, color = "red") +
+  geom_text_repel(size = 3) +
   labs(title = "PCA of D4 Samples Only",
        x = paste0("PC1: ", round(d4_var_explained[1], 2), "% variance"),
        y = paste0("PC2: ", round(d4_var_explained[2], 2), "% variance")) +
   theme_minimal()
 
 #### UMAP - All ####
-
-# Prepare data for UMAP by using the scaled data used for PCA (without labels)
-umap_data <- log_data  # Assuming 'log_data' contains the scaled, transformed values
-
-# Run UMAP on the transformed data, used n_neighbors of 5 but check
-umap_result <- umap(umap_data, n_neighbors = 5, min_dist = 0.1)
-
-# Convert the UMAP output to a data frame
+umap_result <- umap(log_data, n_neighbors = 5, min_dist = 0.1)
 umap_df <- as.data.frame(umap_result$layout)
 colnames(umap_df) <- c("UMAP1", "UMAP2")
+umap_df$Condition <- conditions
+umap_df$Sample <- sample_names
 
-# Add the sample condition information for plotting
-umap_df$Condition <- rep(c("D2", "D4"), times = c(4, 5))  # Adjust based on actual sample counts
-
-# Plot UMAP
-library(ggplot2)
-ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = Condition)) +
+# Plot UMAP with sample names
+ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = Condition, label = Sample)) +
   geom_point(size = 3) +
-  labs(title = "UMAP of Gene Expression Data") +
+  geom_text_repel(size = 3) +
+  labs(title = "UMAP of All Samples") +
   theme_minimal()
 
-#### UMAP - D2 and D4 ####
-# Subset for D2 samples
-d2_data <- expression_data %>% dplyr::select(starts_with("D2_"))
-d2_transposed <- as.data.frame(t(d2_data))
-d2_log_data <- log2(d2_transposed + 1)
-
-# Run UMAP for D2 samples
+#### UMAP - D2 Only ####
 d2_umap_result <- umap(d2_log_data, n_neighbors = 2, min_dist = 0.1)
 d2_umap_df <- as.data.frame(d2_umap_result$layout)
 colnames(d2_umap_df) <- c("UMAP1", "UMAP2")
+d2_umap_df$Sample <- colnames(d2_data)
 
-# Plot UMAP for D2 samples
-ggplot(d2_umap_df, aes(x = UMAP1, y = UMAP2)) +
+# Plot UMAP for D2 samples with sample names
+ggplot(d2_umap_df, aes(x = UMAP1, y = UMAP2, label = Sample)) +
   geom_point(size = 3, color = "blue") +
+  geom_text_repel(size = 3) +
   labs(title = "UMAP of D2 Samples Only") +
   theme_minimal()
 
-# Subset for D4 samples
-d4_data <- expression_data %>% dplyr::select(starts_with("D4_"))
-d4_transposed <- as.data.frame(t(d4_data))
-d4_log_data <- log2(d4_transposed + 1)
-
-# Run UMAP for D4 samples
+#### UMAP - D4 Only ####
 d4_umap_result <- umap(d4_log_data, n_neighbors = 2, min_dist = 0.1)
 d4_umap_df <- as.data.frame(d4_umap_result$layout)
 colnames(d4_umap_df) <- c("UMAP1", "UMAP2")
+d4_umap_df$Sample <- colnames(d4_data)
 
-# Plot UMAP for D4 samples
-ggplot(d4_umap_df, aes(x = UMAP1, y = UMAP2)) +
+# Plot UMAP for D4 samples with sample names
+ggplot(d4_umap_df, aes(x = UMAP1, y = UMAP2, label = Sample)) +
   geom_point(size = 3, color = "red") +
+  geom_text_repel(size = 3) +
   labs(title = "UMAP of D4 Samples Only") +
   theme_minimal()
 
-#### tSNE - All ####
-
-# Run t-SNE on all samples with a lower perplexity
-tsne_result_all <- Rtsne(as.matrix(tsne_data), dims = 2, perplexity = 2)  # Adjusted perplexity
+#### t-SNE - All ####
+tsne_result_all <- Rtsne(as.matrix(log_data), dims = 2, perplexity = 2)
 tsne_df_all <- as.data.frame(tsne_result_all$Y)
 colnames(tsne_df_all) <- c("tSNE1", "tSNE2")
-tsne_df_all$Condition <- rep(c("D2", "D4"), times = c(4, 5))  # Adjust for sample counts
+tsne_df_all$Condition <- conditions
+tsne_df_all$Sample <- sample_names
 
-# Plot t-SNE for all samples
-ggplot(tsne_df_all, aes(x = tSNE1, y = tSNE2, color = Condition)) +
+# Plot t-SNE with sample names
+ggplot(tsne_df_all, aes(x = tSNE1, y = tSNE2, color = Condition, label = Sample)) +
   geom_point(size = 3) +
+  geom_text_repel(size = 3) +
   labs(title = "t-SNE of All Samples") +
   theme_minimal()
 
-#### tSNE - D2/D4 Separate ####
-
-# Run t-SNE for D2 samples with a very low perplexity
+#### t-SNE - D2 Only ####
 d2_tsne_result <- Rtsne(as.matrix(d2_log_data), dims = 2, perplexity = 1)
 d2_tsne_df <- as.data.frame(d2_tsne_result$Y)
 colnames(d2_tsne_df) <- c("tSNE1", "tSNE2")
+d2_tsne_df$Sample <- colnames(d2_data)
 
-# Plot t-SNE for D2 samples
-ggplot(d2_tsne_df, aes(x = tSNE1, y = tSNE2)) +
+# Plot t-SNE for D2 samples with sample names
+ggplot(d2_tsne_df, aes(x = tSNE1, y = tSNE2, label = Sample)) +
   geom_point(size = 3, color = "blue") +
+  geom_text_repel(size = 3) +
   labs(title = "t-SNE of D2 Samples Only") +
   theme_minimal()
 
-# Run t-SNE for D4 samples with a very low perplexity
+#### t-SNE - D4 Only ####
 d4_tsne_result <- Rtsne(as.matrix(d4_log_data), dims = 2, perplexity = 1)
 d4_tsne_df <- as.data.frame(d4_tsne_result$Y)
 colnames(d4_tsne_df) <- c("tSNE1", "tSNE2")
+d4_tsne_df$Sample <- colnames(d4_data)
 
-# Plot t-SNE for D4 samples
-ggplot(d4_tsne_df, aes(x = tSNE1, y = tSNE2)) +
+# Plot t-SNE for D4 samples with sample names
+ggplot(d4_tsne_df, aes(x = tSNE1, y = tSNE2, label = Sample)) +
   geom_point(size = 3, color = "red") +
+  geom_text_repel(size = 3) +
   labs(title = "t-SNE of D4 Samples Only") +
   theme_minimal()
